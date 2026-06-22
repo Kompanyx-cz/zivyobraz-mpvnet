@@ -12,6 +12,7 @@ $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 
+header('Content-Type: text/plain; charset=utf-8');
 echo "HTTP: $httpCode | Délka: " . strlen($response) . " znaků\n\n";
 echo "=== CELÁ ODPOVĚĎ ===\n";
 echo $response;
