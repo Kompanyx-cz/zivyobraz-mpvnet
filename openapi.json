@@ -1,0 +1,44 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "MHD Zlín API",
+    "version": "1.0"
+  },
+  "host": "pilusa-mhd-api-g6bsd8drcte4bjd8.polandcentral-01.azurewebsites.net",
+  "basePath": "/",
+  "schemes": ["https"],
+  "paths": {
+    "/departures.php": {
+      "get": {
+        "operationId": "GetDepartures",
+        "summary": "Získej odjezdy ze zastávky",
+        "parameters": [
+          {
+            "name": "stops",
+            "in": "query",
+            "required": true,
+            "type": "integer"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Seznam odjezdů",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "linka": {"type": "string"},
+                  "smer": {"type": "string"},
+                  "stanoviste": {"type": "string"},
+                  "cas": {"type": "string"},
+                  "zpozdeni": {"type": "integer"}
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
