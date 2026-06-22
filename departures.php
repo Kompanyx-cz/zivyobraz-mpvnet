@@ -1,76 +1,46 @@
 <?php
-/**
- * MPVnet Departures API
- *
- * Parametry (GET):
- * - region: region/město (zlin, odis, idol, jikord, pid) - výchozí: zlin
- * - stops: ID zastávek oddělené čárkou (max 3)
- * - exclude_headsigns: cílové stanice k vynechání
- * - limit: max počet odjezdů (výchozí 15, max 50)
- * - min_minutes: odjezd nejdříve za X minut
- *
- * Příklad: departures.php?region=zlin&stops=37445&limit=10
- */
-
-require_once __DIR__ . '/MpvnetDepartures.php';
-
-// Konfigurace
-MpvnetDepartures::$cacheDir = __DIR__ . '/cache';
-
-// Region
-$validRegions = ['zlin', 'odis', 'idol', 'jikord', 'pid'];
-$region = $_GET['region'] ?? 'zlin';
-if (!in_array($region, $validRegions)) {
-    http_response_code(400);
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['error' => 'Neplatný region. Povolené: ' . implode(', ', $validRegions)]);
-    exit;
-}
-MpvnetDepartures::$region = $region;
-
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 
-// Parsování parametrů
-$stopsParam = $_GET['stops'] ?? '';
-if (empty($stopsParam)) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Chybí povinný parametr: stops']);
+$stopNum = isset($_GET['stops']) ? intval($_GET['stops']) : 0;
+
+if (!$stopNum) {
+    echo json_encode(['error' => 'Chybí parametr stops']);
     exit;
 }
 
-$stopIds = array_filter(array_map('intval', explode(',', $stopsParam)));
-if (empty($stopIds)) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Neplatný parametr stops']);
-    exit;
+// Zavolej mpvnet.cz API
+$ch = curl_init('https://www.mpvnet.cz/zlin/mapapi/departures');
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+    'stopNum' => $stopNum,
+    'departures' => true
+]));
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    'Content-Type: application/json; charset=UTF-8',
+    'Accept: */*',
+    'Origin: https://www.mpvnet.cz',
+    'Referer: https://www.mpvnet.cz/zlin/map/showStation/' . $stopNum,
+    'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'X-Requested-With: XMLHttpRequest',
+]);
+curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+$html = curl_exec($ch);
+curl_close($ch);
+
+// Parsuj HTML tabulku
+$departures = [];
+preg_match_all('/<tr>\s*<td[^>]*>(.*?)<\/td>\s*<td[^>]*title="([^"]*)"[^>]*>.*?<\/td>\s*<td[^>]*>(.*?)<\/td>\s*<td[^>]*>(.*?)<\/td>\s*<td[^>]*>(.*?)<\/td>\s*<\/tr>/s', $html, $matches, PREG_SET_ORDER);
+
+foreach ($matches as $row) {
+    $departures[] = [
+        'linka'     => trim(strip_tags($row[1])),
+        'smer'      => html_entity_decode(trim($row[2]), ENT_HTML5, 'UTF-8'),
+        'stanoviste'=> trim(strip_tags($row[3])),
+        'cas'       => trim(strip_tags($row[4])),
+        'zpozdeni'  => intval(trim(strip_tags($row[5]))),
+    ];
 }
 
-// Volání knihovny
-try {
-    $result = MpvnetDepartures::get([
-        'stops' => $stopIds,
-        'exclude_headsigns' => isset($_GET['exclude_headsigns'])
-            ? array_filter(array_map('trim', explode(',', $_GET['exclude_headsigns'])))
-            : [],
-        'limit' => isset($_GET['limit']) ? (int)$_GET['limit'] : 15,
-        'min_minutes' => isset($_GET['min_minutes']) ? (int)$_GET['min_minutes'] : 0,
-    ]);
-
-    // HTTP hlavičky
-    header('Cache-Control: public, max-age=' . $result['cache_max_age']);
-    header('X-Cache: ' . ($result['from_cache'] ? 'HIT' : 'MISS'));
-    if ($result['first_departure_minutes'] !== null) {
-        header('X-First-Departure-In: ' . $result['first_departure_minutes'] . ' min');
-    }
-
-    // Výstup (formát kompatibilní s Živý obraz)
-    echo json_encode([$result['departures']], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-
-} catch (InvalidArgumentException $e) {
-    http_response_code(400);
-    echo json_encode(['error' => $e->getMessage()]);
-} catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Interní chyba serveru']);
-}
+echo json_encode($departures, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
